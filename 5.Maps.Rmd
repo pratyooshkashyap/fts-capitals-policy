@@ -1,0 +1,175 @@
+---
+title: "Maps"
+author: "Pratyoosh Kashyap"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+FTS Intensity Map
+
+```{r}
+library(tidyverse)
+library(haven) 
+library(janitor) 
+
+library(sf) #contains geographic vector data
+library(tmap) #package to make maps with shape file format files
+library(tigris) #contains US shape files, of state, county, etc.
+options(tigris_use_cache = TRUE)
+
+library(tidyverse)
+library(janitor)
+library(haven)
+
+
+#Get US county shapefile:
+county <- counties(cb = TRUE)
+county <- county %>% clean_names() #makes all variable names lowercase.
+
+#Get US state shapefile:
+state <- states(cb = TRUE)
+state <- state %>% clean_names() #makes all variable names lowercase.
+
+#Get US zip code tabulation area (ZCTA) shapefile:
+zcta <- zctas(cb = TRUE, year = 2019)
+zcta <- zcta %>% clean_names() #makes all variable names lowercase.
+
+#Match zcta to zip codes to merge with intensity data set since we have zip code as geographic identifiers for each School Food Authority (SFA):
+#Import zip to zcta crosswalk file:
+zipcrosswalk <- read_csv("ZIPCodetoZCTACrosswalk2019.csv") %>% clean_names() %>% select(zip_code, state, zcta)
+
+#Rename zcta variable name in zcta dataset to merge:
+zcta <- zcta %>% rename(zcta = zcta5ce20)
+
+#merge zcta shapefile with zipcrosswalk:
+zipmap <- left_join(zipcrosswalk, zcta) #Joining, by = "zcta"
+
+#Drop states: Hawaii, Alaska, Puerto Rico, Virgin Islands, American Samoa, Guam, Northern Mariana Islands, Federated States of Micronesia:
+
+zipmap <- zipmap[!(zipmap$state == "HI"),]
+zipmap <- zipmap[!(zipmap$state == "AK"),]
+zipmap <- zipmap[!(zipmap$state == "PR"),]
+zipmap <- zipmap[!(zipmap$state == "VI"),]
+zipmap <- zipmap[!(zipmap$state == "AS"),]
+zipmap <- zipmap[!(zipmap$state == "GU"),]
+zipmap <- zipmap[!(zipmap$state == "MP"),]
+zipmap <- zipmap[!(zipmap$state == "FM"),]
+
+zipmap <- zipmap[!(zipmap$state == "MH"),]
+zipmap <- zipmap[!(zipmap$state == "PW"),]
+
+#summary(is.na(zipmap))
+
+#Drop NA state value:
+zipmap <- zipmap %>% filter(!(is.na(state)))
+
+#Rename zip in zipmap and merge with reg3:
+zipmap <- zipmap %>% rename(zip = zip_code)
+
+#change state name from abbreviation to full to use for merging:
+zipmap$state <- state.name[match(zipmap$state,state.abb)]
+
+#table(zipmap$state, useNA = "ifany")
+#Only DC becomes NA. Add full state name:
+
+zipmap <- zipmap %>% replace_na(list(state = "District of Columbia"))
+
+#Rename state:
+zipmap <- zipmap %>% rename(state_name = state)
+
+zipmap <- zipmap %>% select(c(zip, state_name, geometry))
+
+# Import FTS intensity data:
+reg_all <- read_csv("reg_data.csv") %>% clean_names()
+
+#Drop all rows which have any NA value:
+reg_all <- na.omit(reg_all) #now, total 8162 observations. 
+
+#merge regression data with zip geometry:
+#reg_map <- left_join(reg_all, zipmap)
+#Joining, by = c("state_name", "zip")
+
+# Alternatively,
+reg_map2 <- left_join(zipmap, reg_all)
+
+#convert dataframe into a sf type object (sometimes after merging it does not appear as sf object):
+reg_map2 <- st_sf(reg_map2)
+
+#remove empty geometry if any:
+reg_map2 <- reg_map2 %>% filter(!st_is_empty(.)) 
+
+#Map at SFA level:
+
+int_usa <- tm_shape(reg_map2) + 
+  tm_polygons(col = "fts_int", style = "cont", palette = "Greens", border.alpha = 0.01, border.col = "black", colorNA = "gray85", textNA = "Missing", title = "FTS Intensity", breaks = c(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16)) + 
+  tm_layout(legend.text.size = 1, legend.title.size = 1.2) + 
+  tm_legend(legend.position = c("left", "bottom"), legend.outside = TRUE)
+
+#int_usa
+
+#Make state boundaries:
+int_usa2 = int_usa + tm_shape(state) + tm_borders(col = "black", alpha = 0.1)
+
+int_usa2
+
+#export map to computer:
+tmap_save(int_usa2, filename = "int_usa.png")
+
+```
+
+State FTS Policies:
+
+```{r}
+#Get US state shapefile:
+state <- states(cb = TRUE)
+state <- state %>% clean_names() #makes all variable names lowercase.
+
+state <- state %>% rename(statename = name)
+
+policy <- read_csv("policy_2018_regdata.csv") %>% clean_names()
+
+# Select relevant variables:
+
+policy <- policy %>% select(state_name, pol_proc, pol_educ)
+policy <- policy %>% rename(statename = state_name)
+
+map_data <- left_join(policy, state, by = "statename")
+
+mapdata <- st_as_sf(map_data)
+
+# Plot map (i) procurement policies:
+
+#table(mapdata$pol_proc)
+
+pmap <- tm_shape(mapdata) + tm_polygons(col = "pol_proc", style = "cont", palette = "Blues", border.alpha = 0.3, border.col = "black", colorNA = "gray", textNA = "Missing", title = "Sum of State FTS\nProcurement Policies", breaks = c(0,1,2,3,4)) + tm_layout(legend.text.size = 1.1, legend.title.size = 1.2) + tm_legend(legend.position = c("right", "bottom"), legend.outside = FALSE)
+
+#to add state boundaries to the map:
+pmap2 = pmap + tm_shape(state) + tm_borders(col = "black")
+
+pmap2
+
+#export map to computer:
+tmap_save(pmap2, filename = "pmap.png", dpi = 300)
+
+####
+
+# Plot map (ii) education policies:
+
+#table(mapdata$pol_educ) 
+
+emap <- tm_shape(mapdata) + tm_polygons(col = "pol_educ", style = "cont", palette = "Greens", border.alpha = 0.3, border.col = "black", colorNA = "gray", textNA = "Missing", title = "Sum of State FTS\nEducation Policies", breaks = c(0,1,2)) + tm_layout(legend.text.size = 1.1, legend.title.size = 1.2) + tm_legend(legend.position = c("right", "bottom"), legend.outside = FALSE)
+
+#to add state boundaries to the map:
+emap2 = emap + tm_shape(state) + tm_borders(col = "black")
+
+emap2
+
+#export map to computer:
+tmap_save(emap2, filename = "emap.png", dpi = 300)
+
+###
+
+```

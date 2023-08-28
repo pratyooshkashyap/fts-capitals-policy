@@ -1,0 +1,211 @@
+---
+title: "Econometric Analysis"
+author: "Pratyoosh Kashyap"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Heckman two-step selection model:
+Step 1: Selection Equation = Factors affecting FTS participation (1/0)
+Step 2: Treatment Equation = Factors affecting intensity of FTS adoption.
+
+FTS ~ Capitals + Policy + Challenges + SFA + FFVP + RUCC
+
+Import libraries:
+
+```{r}
+library(tidyverse)
+library(haven) 
+library(janitor) 
+
+library(sampleSelection) #to run Heckman 2 step model
+library(car) #For VIF
+library(ape) #for Moran's I
+
+library(margins) #for marginal effects of regression coefficients
+
+library(stargazer) #to make summary stats table, table of regression output.
+
+```
+Import data:
+
+```{r}
+#import full data set for regression analysis:
+reg_all <- read_csv("reg_data.csv") %>% clean_names()
+
+#Drop all rows which have any NA value:
+reg_all <- na.omit(reg_all) #now, total 8162 observations. 
+
+options(scipen=999) # so results are not displayed using scientific notation
+
+```
+
+Heckman model:
+
+```{r}
+hman <- heckit(selection = fts ~ factor(ffvp) +
+                  pc1b_manufacturing + pc2b_infrastructure + pc1c_artsdiversity + pc2c_creativeindustries + pc1f + pc1h_healtheducation + pc2h_medicalfoodsecurity + pc1n_naturalamenitiesconservation + pc2n_farmland + pc1s_nonprofitsocialindustries + pc2s_publicvoiceparticipation + 
+                  pol_proc + pol_educ + pol_other +
+                  cvendor + cpurch + ckitch + 
+                     log(totalstudents) + poverty_status +
+                  factor(rucc_2013),
+                  outcome = fts_int ~ pc1b_manufacturing + pc2b_infrastructure + pc1c_artsdiversity + pc2c_creativeindustries + pc1f + pc1h_healtheducation + pc2h_medicalfoodsecurity + pc1n_naturalamenitiesconservation + pc2n_farmland + pc1s_nonprofitsocialindustries + pc2s_publicvoiceparticipation +
+                  pol_proc + pol_educ + pol_other +
+                  cvendor + cpurch + ckitch + 
+                    log(totalstudents) + poverty_status +
+                  factor(rucc_2013), 
+                 data = reg_all, method = "2step")
+
+summary(hman)
+
+#export
+
+stargazer(hman$probit, hman,
+          type = "html",
+          style = "aer",
+          title = "Regression Results",
+          out = "reg.doc",
+          intercept.bottom = T,
+          intercept.top = F,
+          digits = 3,
+          single.row = T)
+
+# Marginal Effects for probit:
+
+reg_all <- reg_all %>% mutate(logtotalstudents = log(totalstudents))
+
+probit <- glm(fts ~ factor(ffvp) +
+                  pc1b_manufacturing + pc2b_infrastructure + pc1c_artsdiversity + pc2c_creativeindustries + pc1f + pc1h_healtheducation + pc2h_medicalfoodsecurity + pc1n_naturalamenitiesconservation + pc2n_farmland + pc1s_nonprofitsocialindustries + pc2s_publicvoiceparticipation + 
+                  pol_proc + pol_educ + pol_other +
+                  cvendor + cpurch + ckitch + 
+                     logtotalstudents + poverty_status +
+                  factor(rucc_2013), 
+                  family = binomial(link = "probit"),
+                  data = reg_all)
+
+summary(probit)
+
+margins_probit <- summary(margins(probit))
+
+#export marginal effects summary:
+write_csv(margins_probit, "margins_probit.csv", na="")
+
+```
+Spatial diagnostics - Moran's I:
+
+```{r}
+#Define neighbor relationships.
+
+#Using the lat-long coordinates, create a weights matrix:
+coordinates <- cbind(reg_all$latitude, reg_all$longitude)
+
+#To calculate an inverse distance weight matrix, generate a matrix of distances (Euclidean):
+D <- as.matrix(dist(coordinates))
+
+#Then create a W matrix with each element as the algebraic inverse:
+W <- 1/D
+
+#Replace diagonal entries with zero:
+diag(W) <- 0
+
+#to see the first 5 rows and columns:
+#W[1:5, 1:5]
+
+#change all infinite values to zero.
+W[is.infinite(W)] <- 0
+
+#Calculate Moran's I for FTS intensity:
+Moran.I(reg_all$fts_int, W) # I = 0.0345
+
+```
+
+Heckman Model with spatial effect originating from FTS intensity:
+
+```{r}
+#create spatially weighted fts_int variable:
+
+w_fts_int <- W %*% reg_all$fts_int
+
+#which is a matrix multiplication of nxn * nx1 = nx1.
+
+#head(w_fts_int)
+
+#merge with data set:
+reg_sp <- cbind(reg_all, w_fts_int)
+
+#Run Heckman with weighted fts_int in both selection and outcome equations:
+
+hman_sp <- heckit(selection = fts ~ factor(ffvp) +
+                  pc1b_manufacturing + pc2b_infrastructure + pc1c_artsdiversity + pc2c_creativeindustries + pc1f + pc1h_healtheducation + pc2h_medicalfoodsecurity + pc1n_naturalamenitiesconservation + pc2n_farmland + pc1s_nonprofitsocialindustries + pc2s_publicvoiceparticipation + 
+                  pol_proc + pol_educ + pol_other +
+                  cvendor + cpurch + ckitch + 
+                    w_fts_int + 
+                    log(totalstudents) + poverty_status +
+                  factor(rucc_2013),
+                  outcome = fts_int ~ pc1b_manufacturing + pc2b_infrastructure + pc1c_artsdiversity + pc2c_creativeindustries + pc1f + pc1h_healtheducation + pc2h_medicalfoodsecurity + pc1n_naturalamenitiesconservation + pc2n_farmland + pc1s_nonprofitsocialindustries + pc2s_publicvoiceparticipation +
+                  pol_proc + pol_educ + pol_other +
+                  cvendor + cpurch + ckitch + 
+                    w_fts_int + 
+                    log(totalstudents) + poverty_status +
+                  factor(rucc_2013), 
+                 data = reg_sp, method = "2step")
+
+summary(hman_sp)
+
+# export regression results:
+
+stargazer(hman_sp$probit, hman_sp,
+          type = "html",
+          style = "aer",
+          title = "Regression Results",
+          out = "reg_sp.doc",
+          intercept.bottom = T,
+          intercept.top = F,
+          digits = 3,
+          single.row = T)
+
+# Marginal effects:
+
+reg_sp2 <- reg_sp %>% mutate(logtotalstudents = log(totalstudents))
+
+probit_sp <- glm(fts ~ factor(ffvp) +
+                  pc1b_manufacturing + pc2b_infrastructure + pc1c_artsdiversity + pc2c_creativeindustries + pc1f + pc1h_healtheducation + pc2h_medicalfoodsecurity + pc1n_naturalamenitiesconservation + pc2n_farmland + pc1s_nonprofitsocialindustries + pc2s_publicvoiceparticipation + 
+                  pol_proc + pol_educ + pol_other +
+                  cvendor + cpurch + ckitch + 
+                    w_fts_int + 
+                    logtotalstudents + poverty_status +
+                  factor(rucc_2013), 
+                  family = binomial(link = "probit"),
+                  data = reg_sp2)
+
+summary(probit_sp)
+
+margins_probit_sp <- summary(margins(probit_sp))
+
+#export marginal effects summary:
+#write_csv(margins_probit_sp, "margins_probit_sp.csv", na="")
+
+```
+
+Get VIF:
+
+```{r}
+ols_m1 <- lm(fts_int ~ pc1b_manufacturing + pc2b_infrastructure + pc1c_artsdiversity + pc2c_creativeindustries + pc1f + pc1h_healtheducation + pc2h_medicalfoodsecurity + pc1n_naturalamenitiesconservation + pc2n_farmland + pc1s_nonprofitsocialindustries + pc2s_publicvoiceparticipation +
+                  pol_proc + pol_educ + pol_other +
+                  cvendor + cpurch + ckitch +
+                  log(totalstudents) + poverty_status +
+                  factor(rucc_2013),
+                 data = reg_all)
+
+# VIF:
+
+vifm1 <- vif(ols_m1)
+
+#Variance Inflation Factor scores for all of the independent variables were well under 4.0, suggesting little multicollinearity among the variables.
+
+```
+

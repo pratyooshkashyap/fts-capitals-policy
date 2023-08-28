@@ -1,0 +1,311 @@
+---
+title: "Farm to School Census data"
+author: "Pratyoosh Kashyap"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Farm to School (FTS) Intensity Measurements
+
+- Measuring intensity of participation in FTS.
+- Create three intensity variables: 
+(i)Overall FTS Intensity, 
+(ii)Procurement Intensity, and 
+(iii)Education Intensity
+
+## Data and Sources:
+
+2019 USDA FTS Census 
+- (access census data here: https://farmtoschoolcensus.fns.usda.gov/census-results/about-data)
+- Respondents are School Food Authorities (SFAs) in the US. 
+- SY 2018-19.
+- Made available in July 2021.
+
+Zip Code Database, US Zip Codes.org 
+- (get zip code to county spreadsheet from: https://www.unitedstateszipcodes.org/zip-code-database/)
+- Zip to county (one to one) match.
+- The county with the largest percentage of the ZIP population is the one matched with every zip. 
+- Their data sources include the United States Postal Service, U.S. Census Bureau, Yahoo, Google, FedEx, and UPS.
+
+
+Import Libraries:
+
+```{r eval=FALSE}
+library(tidyverse) #data wrangling
+library(haven) #to read and write various data formats
+library(janitor) #for cleaning data
+
+```
+Import data:
+
+```{r}
+#import the 2019 FTS Census data:
+cen19 <- read_csv("F2S_census_2019_PUF.csv") %>% clean_names()
+#all blank cells are recorded as 'NA'.
+
+#The Geographic identifier in 2019 FTS Census is zip. Match zip to county (one-to-one match):
+
+#import now zip code and county data
+zip <- read_csv("zip_code_database.csv") %>% clean_names()
+
+cen19 <- cen19 %>% rename(zip = sfa_zip)
+#renaming since the zipcode dataset column name is zip and we are merging using zip.
+
+data1 <- left_join(cen19, zip)
+#joining by 'zip'
+
+```
+Clean:
+
+```{r}
+#Identifying outliers:
+#summary(data1$totalstudents) #outlier = 1089223 (max)
+
+#table(data1$totalstudents, useNA = "always")
+#plot(data1$totalstudents)
+
+#summary(data1$totalschools) #one outlier = 2434 (max)
+
+#Both of these are for Nassau BOCES, NY which has 56 school districts under it in Nassau County! 
+
+#table(data1$totalschools) # there are 12 SFAs which have zero totalschools. Drop these. 
+data1 <- data1 %>% filter(!(totalschools==0))
+
+#table(data1$totalstudents) #5 SFAs have zero totalstudents. Drop these. 
+data1 <- data1 %>% filter(!(totalstudents==0))
+
+#q24_1 (no. of schools in SFA which serve local foods) and q25_1 (no. of schools in SFA which have education activities) have some NA values which we want to replace.
+#Why? Because there are some rows which have (later) a non zero procurement intensity or education intensity, but q24/q25 are blank. Most of these have 1 school in totalschools, with range of 1-6 schools. Replace NA values with 1, which would mean that 1 school is carrying out the activities. This way, we do not get blanks when calculating fts_int, which we would if there were NA values. 
+
+data1 <- data1 %>% mutate(localschools = case_when(is.na(data1$q24_1) ~ 1, TRUE ~ q24_1))
+data1 <- data1 %>% mutate(educschools = case_when(is.na(data1$q25_1) ~ 1, TRUE ~ q25_1))
+
+```
+Calculating the procurement intensity: 
+
+```{r}
+# proc_int = proc_local + proc_edu + proc_prom + proc_str 
+
+# proc_local = (Q4_i_1 + Q4_i_2 + Q4_i_3) + (Q4_i_6) + [either (fruit, veg, protein, grains) = 1] [$local/$total] + [max(fruitfreq, vegfreq, proteinfreq, grainsfreq)]
+
+data1 <- data1 %>% mutate(pl1 = q4_3_1 + q4_3_2 + q4_3_3)
+
+data1 <- data1 %>% mutate(localspend = (q38_1 - q39_1)/q37_1) %>% replace_na(list(localspend = 0))
+#replacing NA's with 0 in localspend. Getting NA's becasue expenditure data is partly/ completely missing. For further addition in getting intensity, consider this part as zero.
+
+# DoD Fresh:
+data1 <- data1 %>% mutate(DoD = q4_3_6)
+
+#code frequency values for fruit, veg, protein, grain:
+
+data1 <- data1 %>% mutate(fruitfreq = case_when(q36_a == 1 ~ 1, q36_a == 2 ~ 1/2, q36_a == 3 ~ 1/5, q36_a == 4 ~ 1/10, q36_a == 5 ~ 1/20, q36_a == 6 ~ 1/40, q36_a == 7 ~ 0, TRUE ~ 0))
+
+data1 <- data1 %>% mutate(vegfreq = case_when(q36_b == 1 ~ 1, q36_b == 2 ~ 1/2, q36_b == 3 ~ 1/5, q36_b == 4 ~ 1/10, q36_b == 5 ~ 1/20, q36_b == 6 ~ 1/40, q36_b == 7 ~ 0, TRUE ~ 0))
+
+data1 <- data1 %>% mutate(proteinfreq = case_when(q36_e == 1 ~ 1, q36_e == 2 ~ 1/2, q36_e == 3 ~ 1/5, q36_e == 4 ~ 1/10, q36_e == 5 ~ 1/20, q36_e == 6 ~ 1/40, q36_e == 7 ~ 0, TRUE ~ 0))
+
+data1 <- data1 %>% mutate(grainfreq = case_when(q36_f == 1 ~ 1, q36_f == 2 ~ 1/2, q36_f == 3 ~ 1/5, q36_f == 4 ~ 1/10, q36_f == 5 ~ 1/20, q36_f == 6 ~ 1/40, q36_f == 7 ~ 0, TRUE ~ 0))
+
+#to get max frequency value for any fruit, veg, protein, grain purchased:
+data1 <- data1 %>% mutate(maxfreq = pmax(fruitfreq, vegfreq, proteinfreq, grainfreq))
+
+data1 <- data1 %>% mutate(purchaselocal = case_when(q34_a == 1 ~ 1, q34_b == 1 ~ 1, q34_e == 1 ~ 1, q34_f == 1 ~ 1, TRUE ~ 0))
+
+# proc_local: 
+data1 <- data1 %>% mutate(proc_local = (pl1) + DoD + (purchaselocal)*(localspend) + (maxfreq))
+
+#next component of procurement intensity:
+# proc_edu = 1 ; if either (Q4_i_11, Q4_i_13, Q4_i_14) = 1
+# proc_prom = 1 ; if either (Q4_i_21, Q4_i_22, Q4_i_23) = 1
+# proc_str = 1 ; if either (Q4_i_12, Q4_i_27, Q4_i_28, Q4_i_29) = 1
+
+#for education activities in procurement:
+data1 <- data1 %>% mutate(proc_edu = case_when(q4_3_11 == 1 ~ 1, q4_3_13 == 1 ~ 1, q4_3_14 == 1 ~ 1, TRUE ~ 0))
+
+#for promotion activities in procurement:
+data1 <- data1 %>% mutate(proc_prom = case_when(q4_3_21 == 1 ~ 1, q4_3_22 == 1 ~ 1, q4_3_23 == 1 ~ 1, TRUE ~ 0))
+
+#for strategic activities in procurement:
+data1 <- data1 %>% mutate(proc_str = case_when(q4_3_12 == 1 ~ 1, q4_3_27 == 1 ~ 1, q4_3_28 == 1 ~ 1, q4_3_29 == 1 ~ 1, TRUE ~ 0))
+
+#add these to get procurement intensity:
+data1 <- data1 %>% mutate(proc_int = proc_local + proc_edu + proc_prom + proc_str)
+
+```
+Calculating education intensity:
+
+```{r}
+# educ_int = educ_garden + educ_kids + educ_comm + gprop
+
+# educ_garden = [ Q4_i_7 + Q4_i_16 ]
+# educ_kids = 1 ; if either (Q4_i_15 / Q4_i_18 / Q4_i_19) = 1
+# educ_comm = 1 ; if either (Q4_i_24 / Q4_i_25 / Q4_i_17 / Q4_i_30) = 1
+# gprop = Q29_1/ totalschools
+
+data1 <- data1 %>% mutate(educ_garden = q4_3_7 + q4_3_16)
+
+data1 <- data1 %>% mutate(educ_kids = case_when(q4_3_15 == 1 ~ 1, q4_3_18 == 1 ~ 1, q4_3_19 == 1 ~ 1, TRUE ~ 0))
+
+data1 <- data1 %>% mutate(educ_comm = case_when(q4_3_17 == 1 ~ 1, q4_3_24 == 1 ~ 1, q4_3_25 == 1 ~ 1, q4_3_30 == 1 ~ 1, TRUE ~ 0))
+
+#q29_1 (how many schools in the SFA had school gardens) has 'D' as an answer for 'Don't know'. Remove those before proceeding. 
+
+data1 <- data1 %>% mutate(q29_1 = na_if(q29_1, "D"))
+
+#class(data1$q29_1) #q29_1 is a character variable. Conver to numeric:
+data1 <- data1 %>% mutate(q29_1 = as.numeric(data1$q29_1))
+
+#rename q29_1:
+data1 <- data1 %>% rename(gschools = q29_1)
+
+#create variable for proportion of schools with garden:
+data1 <- data1 %>% mutate(gprop = gschools/totalschools)
+
+#change all NA values in gprop to zero:
+data1$gprop[is.na(data1$gprop)] <- 0
+
+#add the above four to get education intensity:
+data1 <- data1 %>% mutate(educ_int = educ_garden + educ_kids + educ_comm + gprop)
+
+```
+Staffing intensity:
+
+-Includes (i) dedicated staff 
+(ii) whether there is training for staff
+
+```{r}
+data1 <- data1 %>% mutate(dedicated = case_when(q46_1 >=1 ~ 1, q46_2>=1 | q46_3 >=1  & q46_1 == 0 ~ 0.5, TRUE ~ 0 ))
+
+data1 <- data1 %>% mutate(training = case_when(q4_3_20 == 1 ~ 1, TRUE ~ 0))
+
+data1 <- data1 %>% mutate(staff = dedicated + training)
+
+```
+Now add procurement intensity, education intensity, and staff to get overall FTS intensity (fts_int).
+
+```{r}
+data1 <- data1 %>% mutate(fts_int = proc_int*(localschools/totalschools) + educ_int*(educschools/totalschools) + staff)
+
+#For using procurement and education intensity variables by themselves, add staff to them both. 
+data1 <- data1 %>% mutate(proc_int2 = proc_int*(localschools/totalschools) + staff)
+data1 <- data1 %>% mutate(educ_int2 = educ_int*(educschools/totalschools) + staff)
+
+#make a 1/0 variable for participation:
+data1 <- data1 %>% mutate(fts = case_when(fts_int > 0 ~ 1, TRUE ~ 0))
+```
+Drop states not needed, and add FIPS:
+
+```{r}
+#table(data1$sfa_state, useNA = "ifany")
+
+#Drop states: Hawaii, Alaska, Puerto Rico, Virgin Islands, American Samoa, Guam, Northern Mariana Islands
+data1 <- data1 %>% filter(!(data1$sfa_state=="HI" | data1$sfa_state=="AK" | data1$sfa_state=="PR" | data1$sfa_state=="VI" | data1$sfa_state=="AS" | data1$sfa_state=="GUAM" | data1$sfa_state=="CNMI"))
+
+#import fips-county dataset
+fips <- read_csv("fips.csv") %>% clean_names() %>% rename(county = county_name_long)
+
+#change state name in census from abbreviation to full to use for merging census with fips. 
+data1$state_name <- state.name[match(data1$sfa_state,state.abb)]
+
+#table(data1$state_name, useNA = "ifany")
+
+#Only DC becomes NA. Add full state name:
+data1 <- data1 %>% replace_na(list(state_name = "District of Columbia"))
+
+#Merge census with fips dataset:
+data1 <- left_join(data1, fips)
+#Joining, by = c("county", "state_name")
+
+```
+Code 'challenges' reported by all SFAs into categories as given in the 2019 FTS Census:
+- vendors
+- price and purchasing
+- staff and kitchen
+
+```{r}
+#the objective is to sum the different challenges to have a category total for the three categories of challenges. If we sum normally, and a SFA has some answers but some NAs, then answer is NA. We can skip such NAs and sum the rows, but in that case, if a SFA has not responded to the question, i.e., has all NAs, then it still gets summed to zero. So cannot do this. Instead:
+
+#separate out challenges for FTS=1 into separate data frame:
+cYES <- data1 %>% select(., q14_1:q14_21)
+
+#categorize challenges:
+
+cYES <- cYES %>% mutate(vendorYES = case_when(is.na(q14_1) & is.na(q14_2) & is.na(q14_3) & is.na(q14_4) & is.na(q14_5) & is.na(q14_6) & is.na(q14_7) & is.na(q14_8) & is.na(q14_9) & is.na(q14_10) & is.na(q14_11) & is.na(q14_12) ~ rowSums(cYES[c(1:12)], na.rm = FALSE), TRUE ~ rowSums(cYES[c(1:12)], na.rm = TRUE)))
+
+cYES <- cYES %>% mutate(purchYES = case_when(is.na(q14_13) & is.na(q14_14) & is.na(q14_15) & is.na(q14_16) & is.na(q14_17) ~ rowSums(cYES[c(13:17)], na.rm = FALSE), TRUE ~ rowSums(cYES[c(13:17)], na.rm = TRUE)))
+
+cYES <- cYES %>% mutate(kitchYES = case_when(is.na(q14_18) & is.na(q14_19) & is.na(q14_20) & is.na(q14_21) ~ rowSums(cYES[c(18:21)], na.rm = FALSE), TRUE ~ rowSums(cYES[c(18:21)], na.rm = TRUE)))
+
+#separate out challenges for FTS=0 into a separate data frame:
+cNO <- data1 %>% select(., q18_1:q18_21)
+
+#categorize challenges:
+
+cNO <- cNO %>% mutate(vendorNO = case_when(is.na(q18_1) & is.na(q18_2) & is.na(q18_3) & is.na(q18_4) & is.na(q18_5) & is.na(q18_6) & is.na(q18_7) & is.na(q18_8) & is.na(q18_9) & is.na(q18_10) & is.na(q18_11) & is.na(q18_12) ~ rowSums(cNO[c(1:12)], na.rm = FALSE), TRUE ~ rowSums(cNO[c(1:12)], na.rm = TRUE)))
+
+cNO <- cNO %>% mutate(purchNO = case_when(is.na(q18_13) & is.na(q18_14) & is.na(q18_15) & is.na(q18_16) & is.na(q18_17) ~ rowSums(cNO[c(13:17)], na.rm = FALSE), TRUE ~ rowSums(cNO[c(13:17)], na.rm = TRUE)))
+
+cNO <- cNO %>% mutate(kitchNO = case_when(is.na(q18_18) & is.na(q18_19) & is.na(q18_20) & is.na(q18_21) ~ rowSums(cNO[c(18:21)], na.rm = FALSE), TRUE ~ rowSums(cNO[c(18:21)], na.rm = TRUE)))
+
+#when na.rm = FALSE, if NA appears in a sum, the result will be NA.This is the default.
+#here, na.rm = TRUE ensures that if some columns are filled, but some NAs, since we're summing over multiple columns, we still get a sum at the end, and not a NA.
+
+#merge to make one dataframe:
+cALL <- cbind(cYES, cNO)
+
+#categories of challenges for all SFAs (cannot assume NA=0, since this would imply challenge=0), all NAs remain NAs:
+
+cALL <- cALL %>% mutate(vendor = ifelse(is.na(vendorYES), vendorNO, ifelse(is.na(vendorNO), vendorYES, NA)))
+
+cALL <- cALL %>% mutate(purch = ifelse(is.na(purchYES), purchNO, ifelse(is.na(purchNO), purchYES, NA)))
+
+cALL <- cALL %>% mutate(kitch = ifelse(is.na(kitchYES), kitchNO, ifelse(is.na(kitchNO), kitchYES, NA)))
+
+#keep only the final challenges variables:           
+challenges <- cALL %>% select(vendor, purch, kitch)
+
+#table(challenges$kitch, useNA = "ifany")
+#vendor=[0,12], purch=[0,5], kitch=[0,4]
+#vendor:7012 zeros, purch:8489 zeros, kitch: 8796 zeros.
+#zero here is the SFA does not face this kind of challenge, so zero is a valid response.
+
+#code challenges to four categories (taking from the Likert Scale): 
+  #1 = not a challenge
+  #2/3/4 = somewhat of a challenge/ moderate challenge/ extreme challenge
+
+challenges <- challenges %>% mutate(cvendor = case_when(vendor == 0 ~ 1, vendor == 1 | vendor == 2|  vendor == 3 | vendor == 4 ~ 2, vendor == 5 | vendor == 6 | vendor == 7 | vendor == 8 ~ 3, vendor == 9 | vendor == 10 | vendor == 11 | vendor == 12 ~ 4)) 
+#if none of the cases match, then NA.
+
+challenges <- challenges %>% mutate(cpurch = case_when(purch == 0 ~ 1, purch == 1 ~ 2, purch == 2 | purch == 3 ~ 3, purch == 4 | purch == 5 ~ 4)) 
+
+challenges <- challenges %>% mutate(ckitch = case_when(kitch == 0 ~ 1, kitch == 1 ~ 2, kitch == 2 ~ 3, kitch == 3 | kitch == 4 ~ 4)) 
+
+#merge the challenges back into the original data frame (data1):
+
+data1 <- cbind(data1, challenges)
+
+```
+Add FFVP indicator variable for whether SFA participating in FFVP:
+
+```{r}
+data1 <- data1 %>% mutate(ffvp = case_when(q2_2 == 1 ~ 1, TRUE ~ 0 ))
+```
+Keep relevant variables for regression analysis:
+
+```{r}
+regdata <- data1 %>% select(sfa_name, sfa_id, fips, county, state_name, zip, fts, fts_int, ffvp, cvendor, cpurch, ckitch, totalstudents, totalschools, poverty_status, latitude, longitude)
+
+#Drop SFA Nassau BOCES in NY which has 2434 schools, 56 school districts under it. = major outlier.
+#FTS intensity of Nassau BOCES is 0.0038
+
+regdata <- regdata %>% filter(!(sfa_name=="Nassau BOCES"))
+
+#export dataset:
+#write_csv(regdata, "int_sfa_regdata.csv", na="")
+#na="" ensures that NA becomes a blank cell in excel, and not NA. 
+
+```
+

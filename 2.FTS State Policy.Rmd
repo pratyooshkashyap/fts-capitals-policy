@@ -1,0 +1,47 @@
+---
+title: "FTS state policy"
+author: "Pratyoosh Kashyap"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Policy Database created using the State FTS Policy Handbook.
+-Available at: https://www.farmtoschool.org/resources-main/state-farm-to-school-policy-handbook
+
+Create Policy Environment variables for each state. Categorize them into:
+- Policies supporting procurement activities
+- Policies supporting education and school garden activities
+- Policies which provide other logistical support, promotion programs, infrastructure, etc.
+
+Import libraries and data:
+
+```{r}
+library(tidyverse)
+library(haven) #to read and write various data formats
+library(janitor) #for cleaning data
+
+#import state policy environment
+policy <- read_csv("state_fts_policy_2018.csv") %>% clean_names() %>% rename(state_name = state)
+
+#change all NA values to zero:
+policy[is.na(policy)] <- 0
+
+#create categories for grouping policies:
+
+#procurement:
+policy <- policy %>% mutate(pol_proc = funded_fts + grant + reimbursement_program + local_preference)
+
+#education:
+policy <- policy %>% mutate(pol_educ = garden + education)
+
+#other:
+policy <- policy %>% mutate(pol_other = fts_coordinator + resolutions + promotion + infrastructure + state_fts + database + pilot + task_force + other_related_policies)
+
+#export dataset:
+write_csv(policy, "policy_2018_regdata.csv", na="")
+#na="" ensures that NA becomes a blank cell in excel, and not NA. 
+
+```
