@@ -25,6 +25,6 @@ In this research we leverage the U.S. Department of Agriculture's 2019 Farm to S
 3. Dataset of State Farm to School Policies developed using the State Farm to School Policy Handbook created by the National Farm to School Network and Center for Agriculture and Food Systems (Vermont Law School). Access here: https://www.farmtoschool.org/resources-main/state-farm-to-school-policy-handbook 
 
 4. FIPS codes, RUCCs, and ZIP codes used for regression analysis.
-
+***
 
 <a rel="license" href="http://creativecommons.org/licenses/by/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/88x31.png" /></a><br />This work is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.
