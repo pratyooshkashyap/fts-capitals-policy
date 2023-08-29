@@ -20,4 +20,3 @@ In this research we leverage the U.S. Department of Agriculture's 2019 Farm to S
 2. Database on stocks of community wealth developed by Schmit et al. (2021) (https://doi.org/10.1016/j.foodpol.2021.102119). Access here: https://github.com/schmi-ny/County-Level-Community-Capital-Stocks/tree/main
 
 3. Datasets of State Farm to School Policies, FIPS codes, RUUCs, and ZIP codes used for regression analysis.
-
