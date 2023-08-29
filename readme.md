@@ -1,15 +1,3 @@
----
-title: "readme"
-author: "Pratyoosh Kashyap"
-date: "`r Sys.Date()`"
-output: html_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-
 ## Exploring the Relationship among Stocks of Community Wealth, State Farm to School Policies, and the Intensity of Farm to School Activities
 ***
 In this research we leverage the U.S. Department of Agriculture's 2019 Farm to School Census, a new disaggregated database of state-level Farm to School Policies, and a new county-level dataset of stocks of community wealth to answer three questions:
