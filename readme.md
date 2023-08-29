@@ -1,5 +1,5 @@
 ## Exploring the Relationship among Stocks of Community Wealth, State Farm to School Policies, and the Intensity of Farm to School Activities
-***
+Repository
 In this research we leverage the U.S. Department of Agriculture's 2019 Farm to School Census, a new disaggregated database of state-level Farm to School Policies, and a new county-level dataset of stocks of community wealth to answer three questions:
 1. Is there a relation between community wealth and Farm to School adoption and intensity?
 2. Given the stocks of community wealth, are state-level legislation supporting procurement and education activities in Farm to School related to program participation?
@@ -20,3 +20,4 @@ In this research we leverage the U.S. Department of Agriculture's 2019 Farm to S
 2. Database on stocks of community wealth developed by Schmit et al. (2021) (https://doi.org/10.1016/j.foodpol.2021.102119). Access here: https://github.com/schmi-ny/County-Level-Community-Capital-Stocks/tree/main
 
 3. Datasets of State Farm to School Policies, FIPS codes, RUUCs, and ZIP codes used for regression analysis.
+
