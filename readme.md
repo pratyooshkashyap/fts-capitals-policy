@@ -1,6 +1,5 @@
 ## Exploring the Relationship among Stocks of Community Wealth, State Farm to School Policies, and the Intensity of Farm to School Activities
-Pratyoosh Kashyap, Becca B.R. Jablonski, Allie Bauman
-Colorado State University
+Pratyoosh Kashyap, Becca B.R. Jablonski, and Allie Bauman at Colorado State University
 
 **Repository**
 
